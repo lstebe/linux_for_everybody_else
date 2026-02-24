@@ -8,6 +8,7 @@ import json
 import os
 import platform
 import readline
+import re
 import shlex
 import shutil
 import subprocess
@@ -15,15 +16,42 @@ import sys
 import tempfile
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
+
+
+def ensure_project_venv() -> None:
+    script_path = Path(__file__).resolve()
+    if os.name == "nt":
+        target = script_path.parent / ".venv" / "Scripts" / "python.exe"
+    else:
+        target = script_path.parent / ".venv" / "bin" / "python"
+
+    if not target.exists():
+        return
+
+    try:
+        current = Path(sys.executable).resolve()
+        expected = target.resolve()
+    except OSError:
+        return
+
+    if current == expected:
+        return
+
+    os.execv(str(expected), [str(expected), str(script_path), *sys.argv[1:]])
+
+
+ensure_project_venv()
 
 
 SYSTEM_PROMPT = """Du bist lfe, ein Linux-Shell-Assistent.
 Antworte ausschliesslich als valides JSON-Objekt ohne Markdown.
 Nutze exakt dieses Schema:
 {
+  "language": "DE oder EN",
   "explanation": "kurze Erklaerung in der Sprache der Anfrage",
   "command": "ein einzelner Linux-Befehl, der direkt im aktuellen Ordner funktioniert",
   "flag_explanations": [
@@ -33,11 +61,16 @@ Nutze exakt dieses Schema:
   "warnings": ["optionale Warnung 1", "optionale Warnung 2"]
 }
 Regeln:
+- Klassifiziere die Sprache und setze "language":
+  - "DE" nur wenn die Nutzeranfrage Deutsch ist.
+  - sonst immer "EN" (auch fuer alle anderen Sprachen).
 - Gib genau EINEN Befehl in "command" aus.
 - Wenn der Befehl Flags nutzt, fuelle "flag_explanations" strukturiert mit genau diesen Flags.
 - Wenn keine Flags genutzt werden, gib "flag_explanations": [] aus.
 - Nutze sichere Defaults, wenn moeglich (z. B. erst anzeigen statt sofort loeschen), und erklaere das in explanation.
 - Wenn der Befehl potenziell Dateien loescht, zeige in explanation wenn moeglich einen konkreten Dry-Run-Hinweis.
+- Wenn "language" = "DE", schreibe explanation/flag_explanations/warnings auf Deutsch.
+- Wenn "language" = "EN", schreibe explanation/flag_explanations/warnings auf Englisch.
 - Verwende relative Pfade (.) oder den uebergebenen cwd.
 - Keine Backticks, kein zusaetzlicher Text, nur JSON.
 """
@@ -47,19 +80,16 @@ PROVIDERS = ("ollama", "openai", "claude")
 
 DEFAULTS: Dict[str, Dict[str, str]] = {
     "ollama": {
-        "base_url": "http://localhost:11434",
+        "base_url": "https://ollama.com/api",
         "model": "llama3.2",
-        "api_key": "",
     },
     "openai": {
         "base_url": "https://api.openai.com/v1",
         "model": "gpt-4o-mini",
-        "api_key": "",
     },
     "claude": {
         "base_url": "https://api.anthropic.com/v1",
         "model": "claude-3-5-sonnet-latest",
-        "api_key": "",
     },
 }
 
@@ -67,19 +97,121 @@ ENV_KEYS: Dict[str, Dict[str, Tuple[str, ...]]] = {
     "ollama": {
         "base_url": ("OLLAMA_BASE_URL",),
         "model": ("OLLAMA_MODEL",),
-        "api_key": ("OLLAMA_API_KEY",),
+        "api_key": ("LFEE_TOKEN_OLLAMA", "OLLAMA_API_KEY"),
     },
     "openai": {
         "base_url": ("OPENAI_BASE_URL",),
         "model": ("OPENAI_MODEL",),
-        "api_key": ("OPENAI_API_KEY",),
+        "api_key": ("LFEE_TOKEN_OPENAI", "OPENAI_API_KEY"),
     },
     "claude": {
         "base_url": ("ANTHROPIC_BASE_URL", "CLAUDE_BASE_URL"),
         "model": ("CLAUDE_MODEL", "ANTHROPIC_MODEL"),
-        "api_key": ("ANTHROPIC_API_KEY", "CLAUDE_API_KEY"),
+        "api_key": ("LFEE_TOKEN_CLAUDE", "ANTHROPIC_API_KEY", "CLAUDE_API_KEY"),
     },
 }
+
+UI_TEXTS: Dict[str, Dict[str, str]] = {
+    "de": {
+        "missing_flag_explanation": "Keine Erklaerung vom Modell geliefert.",
+        "empty_request": "Leere Anfrage.",
+        "llm_error": "LLM-Fehler: {error}",
+        "invalid_command": "Keine gueltige command-Antwort vom Modell: {parsed}",
+        "flag_header": "\nFlag-Erklaerungen:",
+        "warnings_header": "\nWarnungen:",
+        "enter_to_run": "\nTippe Enter, um den Befehl auszufuehren (du kannst ihn vorher bearbeiten).",
+        "ctrl_c": "Ctrl+C zum Abbrechen.",
+        "suggestion": "\nVorschlag:",
+        "cancelled": "\nAbgebrochen.",
+        "cd_error": "\ncd-Fehler: {error}",
+        "changed_dir": "\nWechsle nach: {cwd}",
+        "start_subshell": "Starte Subshell. Mit 'exit' kommst du zurueck.",
+        "cd_parent_shell": "\nHinweis: 'cd' kann das Eltern-Shell nicht direkt aendern. Ziel waere: {cwd}",
+        "stdout_stderr": "\nstdout/stderr:",
+        "http_error": "HTTP {code} von {url}: {body}",
+        "network_error": "Netzwerkfehler bei {url}: {error}",
+        "ollama_missing_key": "Ollama Cloud API-Token fehlt (setze LFEE_TOKEN_OLLAMA oder OLLAMA_API_KEY).",
+        "openai_missing_key": "OpenAI API-Token fehlt (setze LFEE_TOKEN_OPENAI oder OPENAI_API_KEY).",
+        "claude_missing_key": "Claude API-Token fehlt (setze LFEE_TOKEN_CLAUDE oder ANTHROPIC_API_KEY).",
+        "unexpected_openai": "Unerwartete OpenAI-Antwort: {data}",
+        "unexpected_claude": "Unerwartete Claude-Antwort: {data}",
+        "provider_not_supported": "Provider nicht unterstuetzt: {provider}",
+    },
+    "en": {
+        "missing_flag_explanation": "No explanation was provided by the model.",
+        "empty_request": "Empty request.",
+        "llm_error": "LLM error: {error}",
+        "invalid_command": "No valid command returned by the model: {parsed}",
+        "flag_header": "\nFlag explanations:",
+        "warnings_header": "\nWarnings:",
+        "enter_to_run": "\nPress Enter to run the command (you can edit it first).",
+        "ctrl_c": "Press Ctrl+C to cancel.",
+        "suggestion": "\nSuggestion:",
+        "cancelled": "\nCancelled.",
+        "cd_error": "\ncd error: {error}",
+        "changed_dir": "\nChanging to: {cwd}",
+        "start_subshell": "Starting a subshell. Use 'exit' to return.",
+        "cd_parent_shell": "\nNote: 'cd' cannot directly change the parent shell. Target would be: {cwd}",
+        "stdout_stderr": "\nstdout/stderr:",
+        "http_error": "HTTP {code} from {url}: {body}",
+        "network_error": "Network error at {url}: {error}",
+        "ollama_missing_key": "Ollama Cloud API token is missing (set LFEE_TOKEN_OLLAMA or OLLAMA_API_KEY).",
+        "openai_missing_key": "OpenAI API token is missing (set LFEE_TOKEN_OPENAI or OPENAI_API_KEY).",
+        "claude_missing_key": "Claude API token is missing (set LFEE_TOKEN_CLAUDE or ANTHROPIC_API_KEY).",
+        "unexpected_openai": "Unexpected OpenAI response: {data}",
+        "unexpected_claude": "Unexpected Claude response: {data}",
+        "provider_not_supported": "Provider not supported: {provider}",
+    },
+}
+
+
+def ui_lang_or_default(ui_lang: str) -> str:
+    return "de" if ui_lang == "de" else "en"
+
+
+def t(ui_lang: str, key: str, **kwargs: Any) -> str:
+    lang = ui_lang_or_default(ui_lang)
+    template = UI_TEXTS[lang][key]
+    return template.format(**kwargs)
+
+
+def classify_request_language(request: str) -> str:
+    text = request.strip().lower()
+    if not text:
+        return "en"
+    if any(ch in text for ch in "äöüß"):
+        return "de"
+    tokens = re.findall(r"[a-zA-Zäöüß]+", text)
+    german_markers = {
+        "bitte",
+        "zeige",
+        "loesche",
+        "lösche",
+        "datei",
+        "dateien",
+        "ordner",
+        "befehl",
+        "welche",
+        "wie",
+        "und",
+        "nicht",
+        "fuer",
+        "für",
+        "mit",
+        "ohne",
+    }
+    if any(tok in german_markers for tok in tokens):
+        return "de"
+    return "en"
+
+
+def normalize_model_language(raw: Any) -> str | None:
+    value = str(raw or "").strip().lower()
+    if value in ("de", "deu", "ger", "german", "deutsch"):
+        return "de"
+    if value in ("en", "eng", "english"):
+        return "en"
+    return None
 
 
 def config_path() -> Path:
@@ -99,7 +231,6 @@ def default_config() -> Dict[str, Any]:
             name: {
                 "base_url": DEFAULTS[name]["base_url"],
                 "model": DEFAULTS[name]["model"],
-                "api_key": "",
             }
             for name in PROVIDERS
         },
@@ -121,7 +252,7 @@ def normalize_config(data: Any) -> Dict[str, Any]:
             section = providers.get(name)
             if not isinstance(section, dict):
                 continue
-            for key in ("base_url", "model", "api_key"):
+            for key in ("base_url", "model"):
                 val = section.get(key)
                 if isinstance(val, str):
                     conf["providers"][name][key] = val
@@ -165,16 +296,44 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
         sub.add_parser("path", help="Pfad zur Konfigurationsdatei anzeigen")
         sub.add_parser("show", help="Aktuelle Konfiguration anzeigen")
         set_parser = sub.add_parser("set", help="Wert setzen")
-        set_parser.add_argument("key", help="z.B. provider, openai.model, openai.base_url, openai.token")
+        set_parser.add_argument(
+            "key",
+            help="z.B. provider, ollama.base_url, openai.model, claude.base_url",
+        )
         set_parser.add_argument("value", help="Neuer Wert")
         unset_parser = sub.add_parser("unset", help="Wert leeren/zuruecksetzen")
-        unset_parser.add_argument("key", help="z.B. openai.token, ollama.base_url")
+        unset_parser.add_argument("key", help="z.B. ollama.model, openai.base_url, claude.model")
         parsed = parser.parse_args(argv[1:])
         parsed.mode = "config"
         return parsed
 
+    epilog = (
+        "Umgebung:\n"
+        "  LFE_PROVIDER=ollama|openai|claude\n"
+        "  OLLAMA_BASE_URL (Default: https://ollama.com/api)\n"
+        "  LFEE_TOKEN_OLLAMA (oder OLLAMA_API_KEY)\n"
+        "  LFEE_TOKEN_OPENAI (oder OPENAI_API_KEY)\n"
+        "  LFEE_TOKEN_CLAUDE (oder ANTHROPIC_API_KEY/CLAUDE_API_KEY)\n"
+        "  OLLAMA_MODEL\n\n"
+        "Python-Shebang Hinweis:\n"
+        "  lfe nutzt #!/usr/bin/env python3\n"
+        "  Falls python3 fehlt: pruefe erst python --version (muss Python 3 sein), dann\n"
+        "  sudo ln -s \"$(command -v python)\" /usr/local/bin/python3\n\n"
+        "Antwortsprache:\n"
+        "  Modell liefert language=DE|EN.\n"
+        "  DE nur bei deutscher Anfrage, sonst EN.\n\n"
+        "Standalone-Binary:\n"
+        "  ./scripts/build_standalone.sh\n\n"
+        "Ollama.com Beispiel:\n"
+        "  OLLAMA_BASE_URL=https://ollama.com/api \\\n"
+        "  LFEE_TOKEN_OLLAMA=ollama_... \\\n"
+        "  lfe --provider ollama \"zeige alle python dateien\""
+    )
     parser = argparse.ArgumentParser(
-        prog="lfe", description="Natural language to Linux command via LLM."
+        prog="lfe",
+        description="Natural language to Linux command via LLM.",
+        epilog=epilog,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("prompt", nargs="*", help="Natuerliche Sprache fuer den Shell-Befehl")
     parser.add_argument(
@@ -353,7 +512,9 @@ def build_system_prompt(cwd: str) -> str:
     return SYSTEM_PROMPT + context_block
 
 
-def http_post_json(url: str, payload: Dict[str, Any], headers: Dict[str, str]) -> Dict[str, Any]:
+def http_post_json(
+    url: str, payload: Dict[str, Any], headers: Dict[str, str], ui_lang: str
+) -> Dict[str, Any]:
     body = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(url, data=body, headers=headers, method="POST")
     try:
@@ -362,12 +523,36 @@ def http_post_json(url: str, payload: Dict[str, Any], headers: Dict[str, str]) -
             return json.loads(data)
     except urllib.error.HTTPError as err:
         error_body = err.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"HTTP {err.code} von {url}: {error_body}") from err
+        raise RuntimeError(t(ui_lang, "http_error", code=err.code, url=url, body=error_body)) from err
     except urllib.error.URLError as err:
-        raise RuntimeError(f"Netzwerkfehler bei {url}: {err}") from err
+        raise RuntimeError(t(ui_lang, "network_error", url=url, error=err)) from err
 
 
-def call_ollama(base_url: str, model: str, system_prompt: str, user_prompt: str) -> str:
+def looks_like_ollama_cloud(base_url: str) -> bool:
+    candidate = base_url.strip()
+    if not candidate:
+        return False
+
+    if "://" not in candidate:
+        candidate = f"https://{candidate}"
+    parsed = urllib.parse.urlparse(candidate)
+    host = (parsed.netloc or parsed.path).split("/")[0].lower()
+    return host == "ollama.com" or host.endswith(".ollama.com")
+
+
+def ollama_chat_endpoint(base_url: str) -> str:
+    clean = base_url.strip().rstrip("/")
+    if clean.endswith("/api"):
+        return f"{clean}/chat"
+    return f"{clean}/api/chat"
+
+
+def call_ollama(
+    base_url: str, api_key: str, model: str, system_prompt: str, user_prompt: str, ui_lang: str
+) -> str:
+    if looks_like_ollama_cloud(base_url) and not api_key:
+        raise RuntimeError(t(ui_lang, "ollama_missing_key"))
+
     payload = {
         "model": model,
         "stream": False,
@@ -377,17 +562,23 @@ def call_ollama(base_url: str, model: str, system_prompt: str, user_prompt: str)
         ],
         "options": {"temperature": 0.1},
     }
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
     data = http_post_json(
-        f"{base_url}/api/chat",
+        ollama_chat_endpoint(base_url),
         payload,
-        headers={"Content-Type": "application/json"},
+        headers=headers,
+        ui_lang=ui_lang,
     )
     return data.get("message", {}).get("content", "")
 
 
-def call_openai(base_url: str, api_key: str, model: str, system_prompt: str, user_prompt: str) -> str:
+def call_openai(
+    base_url: str, api_key: str, model: str, system_prompt: str, user_prompt: str, ui_lang: str
+) -> str:
     if not api_key:
-        raise RuntimeError("OpenAI API-Token fehlt (setze openai.token oder OPENAI_API_KEY).")
+        raise RuntimeError(t(ui_lang, "openai_missing_key"))
     payload = {
         "model": model,
         "messages": [
@@ -403,16 +594,19 @@ def call_openai(base_url: str, api_key: str, model: str, system_prompt: str, use
             "Content-Type": "application/json",
             "Authorization": f"Bearer {api_key}",
         },
+        ui_lang=ui_lang,
     )
     try:
         return data["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError) as err:
-        raise RuntimeError(f"Unerwartete OpenAI-Antwort: {data}") from err
+        raise RuntimeError(t(ui_lang, "unexpected_openai", data=data)) from err
 
 
-def call_claude(base_url: str, api_key: str, model: str, system_prompt: str, user_prompt: str) -> str:
+def call_claude(
+    base_url: str, api_key: str, model: str, system_prompt: str, user_prompt: str, ui_lang: str
+) -> str:
     if not api_key:
-        raise RuntimeError("Claude API-Token fehlt (setze claude.token oder ANTHROPIC_API_KEY).")
+        raise RuntimeError(t(ui_lang, "claude_missing_key"))
     payload = {
         "model": model,
         "system": system_prompt,
@@ -428,12 +622,13 @@ def call_claude(base_url: str, api_key: str, model: str, system_prompt: str, use
             "x-api-key": api_key,
             "anthropic-version": "2023-06-01",
         },
+        ui_lang=ui_lang,
     )
     try:
         blocks = data["content"]
         return "\n".join(block["text"] for block in blocks if block.get("type") == "text")
     except (KeyError, TypeError) as err:
-        raise RuntimeError(f"Unerwartete Claude-Antwort: {data}") from err
+        raise RuntimeError(t(ui_lang, "unexpected_claude", data=data)) from err
 
 
 def extract_json(raw_text: str) -> Dict[str, Any]:
@@ -507,14 +702,6 @@ def env_value(provider: str, key: str) -> str:
     return ""
 
 
-def mask_secret(value: str) -> str:
-    if not value:
-        return ""
-    if len(value) <= 6:
-        return "*" * len(value)
-    return f"{value[:4]}{'*' * (len(value) - 6)}{value[-2:]}"
-
-
 def resolve_runtime_config(
     args: argparse.Namespace, conf: Dict[str, Any]
 ) -> Tuple[str, str, str, str]:
@@ -534,14 +721,12 @@ def resolve_runtime_config(
     base_url = env_value(provider, "base_url") or provider_conf.get("base_url", "")
     if not base_url:
         base_url = DEFAULTS[provider]["base_url"]
-    api_key = env_value(provider, "api_key") or provider_conf.get("api_key", "")
+    api_key = env_value(provider, "api_key")
     return provider, model, base_url, api_key
 
 
 def normalize_key(key: str) -> str:
     key = key.strip().lower()
-    key = key.replace("apikey", "api_key")
-    key = key.replace("token", "api_key")
     return key
 
 
@@ -556,12 +741,12 @@ def set_config_value(conf: Dict[str, Any], raw_key: str, value: str) -> None:
     parts = key.split(".")
     if len(parts) != 2:
         raise ValueError(
-            "Ungueltiger Key. Beispiele: provider, openai.model, openai.base_url, openai.token"
+            "Ungueltiger Key. Beispiele: provider, ollama.base_url, openai.model, claude.base_url"
         )
     provider, field = parts
     if provider not in PROVIDERS:
         raise ValueError(f"Unbekannter Provider im Key: {provider}")
-    if field not in ("model", "base_url", "api_key"):
+    if field not in ("model", "base_url"):
         raise ValueError(f"Ungueltiges Feld im Key: {field}")
     conf["providers"][provider][field] = value
 
@@ -575,26 +760,14 @@ def unset_config_value(conf: Dict[str, Any], raw_key: str) -> None:
     parts = key.split(".")
     if len(parts) != 2:
         raise ValueError(
-            "Ungueltiger Key. Beispiele: provider, openai.model, openai.base_url, openai.token"
+            "Ungueltiger Key. Beispiele: provider, ollama.base_url, openai.model, claude.base_url"
         )
     provider, field = parts
     if provider not in PROVIDERS:
         raise ValueError(f"Unbekannter Provider im Key: {provider}")
-    if field not in ("model", "base_url", "api_key"):
+    if field not in ("model", "base_url"):
         raise ValueError(f"Ungueltiges Feld im Key: {field}")
-    if field in ("model", "base_url"):
-        conf["providers"][provider][field] = DEFAULTS[provider][field]
-    else:
-        conf["providers"][provider][field] = ""
-
-
-def config_show(conf: Dict[str, Any]) -> str:
-    out = normalize_config(conf)
-    for provider in PROVIDERS:
-        out["providers"][provider]["api_key"] = mask_secret(
-            out["providers"][provider].get("api_key", "")
-        )
-    return json.dumps(out, ensure_ascii=True, indent=2)
+    conf["providers"][provider][field] = DEFAULTS[provider][field]
 
 
 def handle_config(args: argparse.Namespace, conf: Dict[str, Any]) -> int:
@@ -602,7 +775,7 @@ def handle_config(args: argparse.Namespace, conf: Dict[str, Any]) -> int:
         print(config_path())
         return 0
     if args.config_cmd == "show":
-        print(config_show(conf))
+        print(json.dumps(normalize_config(conf), ensure_ascii=True, indent=2))
         return 0
     if args.config_cmd == "set":
         try:
@@ -632,14 +805,15 @@ def call_provider(
     model: str,
     system_prompt: str,
     user_prompt: str,
+    ui_lang: str,
 ) -> str:
     if provider == "ollama":
-        return call_ollama(base_url, model, system_prompt, user_prompt)
+        return call_ollama(base_url, api_key, model, system_prompt, user_prompt, ui_lang)
     if provider == "openai":
-        return call_openai(base_url, api_key, model, system_prompt, user_prompt)
+        return call_openai(base_url, api_key, model, system_prompt, user_prompt, ui_lang)
     if provider == "claude":
-        return call_claude(base_url, api_key, model, system_prompt, user_prompt)
-    raise RuntimeError(f"Provider nicht unterstuetzt: {provider}")
+        return call_claude(base_url, api_key, model, system_prompt, user_prompt, ui_lang)
+    raise RuntimeError(t(ui_lang, "provider_not_supported", provider=provider))
 
 
 def configure_stdio() -> None:
@@ -795,7 +969,7 @@ def normalize_flag_explanations(raw: Any) -> Dict[str, str]:
     return out
 
 
-def build_structured_flag_explanations(command: str, raw: Any) -> List[Tuple[str, str]]:
+def build_structured_flag_explanations(command: str, raw: Any, ui_lang: str) -> List[Tuple[str, str]]:
     flags_in_command = extract_flags_from_command(command)
     provided = normalize_flag_explanations(raw)
 
@@ -803,7 +977,7 @@ def build_structured_flag_explanations(command: str, raw: Any) -> List[Tuple[str
     for flag in flags_in_command:
         meaning = provided.get(flag, "").strip()
         if not meaning:
-            meaning = "Keine Erklaerung vom Modell geliefert."
+            meaning = t(ui_lang, "missing_flag_explanation")
         out.append((flag, meaning))
     return out
 
@@ -816,49 +990,52 @@ def main() -> int:
         return handle_config(args, conf)
 
     request = " ".join(args.prompt).strip()
+    ui_lang = classify_request_language(request)
     if not request:
-        print("Leere Anfrage.", file=sys.stderr)
+        print(t(ui_lang, "empty_request"), file=sys.stderr)
         return 2
 
     provider, model, base_url, api_key = resolve_runtime_config(args, conf)
     cwd = os.getcwd()
     system_prompt = build_system_prompt(cwd)
-    user_prompt = f"Anfrage: {request}"
+    user_prompt = f"Request: {request}"
 
     try:
-        raw = call_provider(provider, base_url, api_key, model, system_prompt, user_prompt)
+        raw = call_provider(provider, base_url, api_key, model, system_prompt, user_prompt, ui_lang)
         parsed = extract_json(raw)
     except Exception as err:
-        print(f"LLM-Fehler: {err}", file=sys.stderr)
+        print(t(ui_lang, "llm_error", error=err), file=sys.stderr)
         return 1
+
+    ui_lang = normalize_model_language(parsed.get("language")) or ui_lang
 
     explanation = str(parsed.get("explanation", "")).strip()
     command = str(parsed.get("command", "")).strip()
     flag_explanations = build_structured_flag_explanations(
-        command, parsed.get("flag_explanations")
+        command, parsed.get("flag_explanations"), ui_lang
     )
     warnings: List[str] = []
     if isinstance(parsed.get("warnings"), list):
         warnings = [str(w).strip() for w in parsed["warnings"] if str(w).strip()]
 
     if not command:
-        print(f"Keine gueltige command-Antwort vom Modell: {parsed}", file=sys.stderr)
+        print(t(ui_lang, "invalid_command", parsed=parsed), file=sys.stderr)
         return 1
 
     if explanation:
         print(explanation)
     if flag_explanations:
-        print("\nFlag-Erklaerungen:")
+        print(t(ui_lang, "flag_header"))
         for flag, meaning in flag_explanations:
             print(f"- {flag}: {meaning}")
     if warnings:
-        print("\nWarnungen:")
+        print(t(ui_lang, "warnings_header"))
         for item in warnings:
             print(f"- {item}")
 
-    print("\nTippe Enter, um den Befehl auszufuehren (du kannst ihn vorher bearbeiten).")
-    print("Ctrl+C zum Abbrechen.")
-    print("\nVorschlag:")
+    print(t(ui_lang, "enter_to_run"))
+    print(t(ui_lang, "ctrl_c"))
+    print(t(ui_lang, "suggestion"))
     print(command)
 
     if args.print_only:
@@ -867,7 +1044,7 @@ def main() -> int:
     try:
         entered = editable_input("\n$ ", command)
     except KeyboardInterrupt:
-        print("\nAbgebrochen.")
+        print(t(ui_lang, "cancelled"))
         return 130
 
     # Enter ohne Text fuehrt den vorgeschlagenen Befehl aus.
@@ -880,22 +1057,19 @@ def main() -> int:
         try:
             os.chdir(cd_target)
         except OSError as err:
-            print(f"\ncd-Fehler: {err}", file=sys.stderr)
+            print(t(ui_lang, "cd_error", error=err), file=sys.stderr)
             return 1
 
         if sys.stdin.isatty() and sys.stdout.isatty():
             shell = os.getenv("SHELL") or shutil.which("bash") or "/bin/sh"
-            print(f"\nWechsle nach: {os.getcwd()}")
-            print("Starte Subshell. Mit 'exit' kommst du zurueck.")
+            print(t(ui_lang, "changed_dir", cwd=os.getcwd()))
+            print(t(ui_lang, "start_subshell"))
             os.execvp(shell, [shell, "-i"])
 
-        print(
-            "\nHinweis: 'cd' kann das Eltern-Shell nicht direkt aendern. "
-            f"Ziel waere: {os.getcwd()}"
-        )
+        print(t(ui_lang, "cd_parent_shell", cwd=os.getcwd()))
         return 0
 
-    print("\nstdout/stderr:")
+    print(t(ui_lang, "stdout_stderr"))
     completed = subprocess.run(final_command, shell=True, check=False)
     return completed.returncode
 
