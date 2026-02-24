@@ -1,8 +1,4 @@
-Here is the **English translation**, keeping structure and technical meaning precise:
-
----
-
-# linux_for_everybody (`lfe`)
+# linux_for_everybody_else (`lfe`)
 
 `lfe` takes a natural language input and suggests a Linux command.
 You can then edit the command directly in the terminal and execute it by pressing Enter.
