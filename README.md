@@ -1,55 +1,59 @@
+Here is the **English translation**, keeping structure and technical meaning precise:
+
+---
+
 # linux_for_everybody (`lfe`)
 
-`lfe` nimmt eine natürliche Spracheingabe und schlägt einen Linux-Befehl vor.
-Anschließend kannst du den Befehl im Terminal direkt bearbeiten und mit Enter ausführen.
-Einfach nur `Enter` führt den vorgeschlagenen Befehl direkt aus (kein Kopieren nötig).
+`lfe` takes a natural language input and suggests a Linux command.
+You can then edit the command directly in the terminal and execute it by pressing Enter.
+Pressing **Enter** immediately executes the suggested command (no copy & paste required).
 
-## Unterstützte Provider
+## Supported Providers
 
-- `ollama` (Default: `https://ollama.com/api`)
-- `openai`
-- `claude` (Anthropic)
+* `ollama` (default: `https://ollama.com/api`)
+* `openai`
+* `claude` (Anthropic)
 
-Hinweis: `README` und `lfe --help` werden inhaltlich synchron gehalten.
+Note: `README` and `lfe --help` are kept content-synchronized.
 
-## Schnellstart
+## Quick Start
 
 ```bash
-cd /pfad/zu/linux_for_everybody_else
-./lfe "gebe mir einen befehl um alle dateien in diesem ordner zu löschen, die vor heute erstellt wurden"
+cd /path/to/linux_for_everybody_else
+./lfe "give me a command to delete all files in this directory that were created before today"
 ```
 
-## Python-Shebang Voraussetzung
+## Python Shebang Requirement
 
-`lfe` nutzt:
+`lfe` uses:
 
 ```bash
 #!/usr/bin/env python3
 ```
 
-Falls `python3` auf dem Zielsystem nicht im `PATH` gefunden wird:
+If `python3` is not found in `PATH` on the target system:
 
 ```bash
 command -v python3
 ```
 
-Wenn nichts gefunden wird, nur dann einen Symlink setzen, falls `python` bereits auf Python 3 zeigt:
+If nothing is found, only then create a symlink **if** `python` already points to Python 3:
 
 ```bash
 python --version
 sudo ln -s "$(command -v python)" /usr/local/bin/python3
 ```
 
-Prüfen:
+Verify:
 
 ```bash
 command -v python3
 python3 --version
 ```
 
-Wenn `python` nicht vorhanden ist oder keine Python-3-Version ist, installiere `python3` ueber den Paketmanager statt zu symlinken.
+If `python` is not present or is not a Python 3 version, install `python3` via the package manager instead of symlinking.
 
-## Optionen
+## Options
 
 ```bash
 ./lfe "..." --provider ollama
@@ -58,24 +62,23 @@ Wenn `python` nicht vorhanden ist oder keine Python-3-Version ist, installiere `
 ./lfe "..." --print-only
 ```
 
-## Antwortsprache (DE/EN)
+## Response Language (DE / EN)
 
-`lfe` erwartet vom Modell eine Sprach-Klassifizierung im JSON:
+`lfe` expects a language classification from the model in JSON:
 
-- `language=DE` nur bei deutscher Anfrage
-- sonst immer `language=EN` (auch fuer alle anderen Sprachen)
+* `language=DE` only for German requests
+* otherwise always `language=EN` (including all other languages)
 
-Zusatz: Die fest verdrahteten Laufzeit-Ausgaben von `lfe` (z. B. Warnungen, Prompts, Fehlertexte)
-nutzen dieselbe Sprache (`DE` oder `EN`).
+Additionally, the hard-coded runtime output of `lfe` (e.g. warnings, prompts, error messages) uses the same language (`DE` or `EN`).
 
-## Persistente Konfiguration
+## Persistent Configuration
 
-Konfig-Datei:
+Config file:
 
-- `~/.config/lfe/config.json` (oder `$XDG_CONFIG_HOME/lfe/config.json`)
-- Optionaler Override: `LFE_CONFIG=/pfad/zu/config.json`
+* `~/.config/lfe/config.json` (or `$XDG_CONFIG_HOME/lfe/config.json`)
+* Optional override: `LFE_CONFIG=/path/to/config.json`
 
-Wichtige Befehle:
+Important commands:
 
 ```bash
 lfe config path
@@ -88,32 +91,32 @@ lfe config set openai.model gpt-4o-mini
 lfe config unset ollama.base_url
 ```
 
-Hinweis:
+Notes:
 
-- Prioritaet bei Werten: CLI-flags > Umgebungsvariablen > Konfig-Datei > Defaults.
-- Tokens werden nicht in `config.json` gespeichert.
-- Der System-Prompt enthaelt Laufzeit-Kontext: Distribution, `cwd`, Home-Pfad und Tree (Tiefe 2) von `cwd`.
-- Wenn der vorgeschlagene Befehl flags nutzt, zeigt `lfe` strukturierte Erklaerungen pro flag an.
-- Anfragen mit `-`-Teilen im Satz (z. B. `was macht das -f in tail`) werden als normaler Prompt behandelt.
-- Wenn der Vorschlag ein reines `cd ...` ist, startet `lfe` eine Subshell im Zielordner.
-- Ausgefuehrte `lfe`-Befehle werden in `HISTFILE` gespeichert (bash/zsh best effort); in einer laufenden bash-Sitzung ggf. `history -n` ausfuehren.
+* Value precedence: CLI flags > environment variables > config file > defaults.
+* Tokens are not stored in `config.json`.
+* The system prompt includes runtime context: distribution, `cwd`, home path, and a directory tree (depth 2) of `cwd`.
+* If the suggested command uses flags, `lfe` shows structured explanations per flag.
+* Requests containing `-` segments in the sentence (e.g. `what does -f do in tail`) are treated as a normal prompt.
+* If the suggestion is a pure `cd ...`, `lfe` starts a subshell in the target directory.
+* Executed `lfe` commands are written to `HISTFILE` (bash/zsh best effort); in an active bash session you may need to run `history -n`.
 
-## Umgebungsvariablen
+## Environment Variables
 
-- `LFE_PROVIDER` (`ollama|openai|claude`)
-- `OLLAMA_BASE_URL` (Default: `https://ollama.com/api`)
-- `LFEE_TOKEN_OLLAMA` (oder `OLLAMA_API_KEY`)
-- `OLLAMA_MODEL` (Default: `llama3.2`)
-- `OPENAI_BASE_URL` (Default: `https://api.openai.com/v1`)
-- `LFEE_TOKEN_OPENAI` (oder `OPENAI_API_KEY`)
-- `OPENAI_MODEL` (Default: `gpt-4o-mini`)
-- `ANTHROPIC_BASE_URL` oder `CLAUDE_BASE_URL` (Default: `https://api.anthropic.com/v1`)
-- `LFEE_TOKEN_CLAUDE` (oder `ANTHROPIC_API_KEY` oder `CLAUDE_API_KEY`)
-- `CLAUDE_MODEL` oder `ANTHROPIC_MODEL` (Default: `claude-3-5-sonnet-latest`)
+* `LFE_PROVIDER` (`ollama|openai|claude`)
+* `OLLAMA_BASE_URL` (default: `https://ollama.com/api`)
+* `LFEE_TOKEN_OLLAMA` (or `OLLAMA_API_KEY`)
+* `OLLAMA_MODEL` (default: `llama3.2`)
+* `OPENAI_BASE_URL` (default: `https://api.openai.com/v1`)
+* `LFEE_TOKEN_OPENAI` (or `OPENAI_API_KEY`)
+* `OPENAI_MODEL` (default: `gpt-4o-mini`)
+* `ANTHROPIC_BASE_URL` or `CLAUDE_BASE_URL` (default: `https://api.anthropic.com/v1`)
+* `LFEE_TOKEN_CLAUDE` (or `ANTHROPIC_API_KEY` or `CLAUDE_API_KEY`)
+* `CLAUDE_MODEL` or `ANTHROPIC_MODEL` (default: `claude-3-5-sonnet-latest`)
 
-## Persistente Tokens (`LFEE_TOKEN_<PROVIDER>`)
+## Persistent Tokens (`LFEE_TOKEN_<PROVIDER>`)
 
-Beispiele:
+Examples:
 
 ```bash
 export LFEE_TOKEN_OLLAMA="ollama_..."
@@ -121,7 +124,7 @@ export LFEE_TOKEN_OPENAI="sk-..."
 export LFEE_TOKEN_CLAUDE="sk-ant-..."
 ```
 
-Persistent fuer Bash (`~/.bashrc`):
+Persistent for Bash (`~/.bashrc`):
 
 ```bash
 echo 'export LFEE_TOKEN_OLLAMA="ollama_..."' >> ~/.bashrc
@@ -130,7 +133,7 @@ echo 'export LFEE_TOKEN_CLAUDE="sk-ant-..."' >> ~/.bashrc
 source ~/.bashrc
 ```
 
-Persistent fuer Zsh (`~/.zshrc`):
+Persistent for Zsh (`~/.zshrc`):
 
 ```bash
 echo 'export LFEE_TOKEN_OLLAMA="ollama_..."' >> ~/.zshrc
@@ -139,34 +142,34 @@ echo 'export LFEE_TOKEN_CLAUDE="sk-ant-..."' >> ~/.zshrc
 source ~/.zshrc
 ```
 
-### Ollama Cloud (ohne lokalen Ollama-Daemon)
+### Ollama Cloud (without a local Ollama daemon)
 
 ```bash
 export OLLAMA_BASE_URL="https://ollama.com/api"
 export LFEE_TOKEN_OLLAMA="ollama_..."
-./lfe "zeige alle python dateien im aktuellen ordner" --provider ollama
+./lfe "show all python files in the current directory" --provider ollama
 ```
 
-## Installation als globaler Befehl (optional)
+## Install as a Global Command (optional)
 
 ```bash
-sudo ln -s /pfad/zu/linux_for_everybody_else/lfe /usr/local/bin/lfe
+sudo ln -s /path/to/linux_for_everybody_else/lfe /usr/local/bin/lfe
 ```
 
-Danach kannst du überall `lfe "..."` ausführen.
+After that, you can run `lfe "..."` from anywhere.
 
-## Standalone-Binary bauen
+## Build Standalone Binary
 
-Auf einem System mit Internetzugriff kannst du eine echte Standalone-Binary bauen:
+On a system with internet access you can build a true standalone binary:
 
 ```bash
 ./scripts/build_standalone.sh
 ```
 
-Ergebnis:
+Result:
 
-- `dist/lfe`
+* `dist/lfe`
 
-Hinweis:
+Note:
 
-- Die Binary ist plattformgebunden (Linux-Build fuer Linux, macOS-Build fuer macOS).
+* The binary is platform-specific (Linux build for Linux, macOS build for macOS).
