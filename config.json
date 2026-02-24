@@ -4,7 +4,7 @@
     "ollama": {
       "base_url": "http://localhost:11434",
       "model": "gpt-oss:120b-cloud",
-      "api_key": "e76b41383a3444c685922e4c6070edef.tH3WtKG4BPCCsNiqfpTs-032"
+      "api_key": "e761234"
     },
     "openai": {
       "base_url": "https://api.openai.com/v1",
