@@ -47,32 +47,32 @@ def ensure_project_venv() -> None:
 ensure_project_venv()
 
 
-SYSTEM_PROMPT = """Du bist lfe, ein Linux-Shell-Assistent.
-Antworte ausschliesslich als valides JSON-Objekt ohne Markdown.
-Nutze exakt dieses Schema:
+SYSTEM_PROMPT = """You are lfe, a Linux shell assistant.
+Respond only with a valid JSON object and no Markdown.
+Use exactly this schema:
 {
-  "language": "DE oder EN",
-  "explanation": "kurze Erklaerung in der Sprache der Anfrage",
-  "command": "ein einzelner Linux-Befehl, der direkt im aktuellen Ordner funktioniert",
+  "language": "DE or EN",
+  "explanation": "short explanation in the request language",
+  "command": "a single Linux command that works directly in the current directory",
   "flag_explanations": [
-    {"flag": "-x", "meaning": "Bedeutung von -x"},
-    {"flag": "--example", "meaning": "Bedeutung von --example"}
+    {"flag": "-x", "meaning": "meaning of -x"},
+    {"flag": "--example", "meaning": "meaning of --example"}
   ],
-  "warnings": ["optionale Warnung 1", "optionale Warnung 2"]
+  "warnings": ["optional warning 1", "optional warning 2"]
 }
-Regeln:
-- Klassifiziere die Sprache und setze "language":
-  - "DE" nur wenn die Nutzeranfrage Deutsch ist.
-  - sonst immer "EN" (auch fuer alle anderen Sprachen).
-- Gib genau EINEN Befehl in "command" aus.
-- Wenn der Befehl Flags nutzt, fuelle "flag_explanations" strukturiert mit genau diesen Flags.
-- Wenn keine Flags genutzt werden, gib "flag_explanations": [] aus.
-- Nutze sichere Defaults, wenn moeglich (z. B. erst anzeigen statt sofort loeschen), und erklaere das in explanation.
-- Wenn der Befehl potenziell Dateien loescht, zeige in explanation wenn moeglich einen konkreten Dry-Run-Hinweis.
-- Wenn "language" = "DE", schreibe explanation/flag_explanations/warnings auf Deutsch.
-- Wenn "language" = "EN", schreibe explanation/flag_explanations/warnings auf Englisch.
-- Verwende relative Pfade (.) oder den uebergebenen cwd.
-- Keine Backticks, kein zusaetzlicher Text, nur JSON.
+Rules:
+- Classify the language and set "language":
+  - "DE" only when the user request is German.
+  - otherwise always "EN" (including all other languages).
+- Output exactly ONE command in "command".
+- If the command uses flags, fill "flag_explanations" with exactly those flags.
+- If no flags are used, output "flag_explanations": [].
+- Use safe defaults when possible (for example show first instead of deleting directly), and explain that in explanation.
+- If the command may delete files, include a concrete dry-run hint in explanation when possible.
+- If "language" = "DE", write explanation/flag_explanations/warnings in German.
+- If "language" = "EN", write explanation/flag_explanations/warnings in English.
+- Use relative paths (.) or the provided cwd.
+- No backticks, no extra text, JSON only.
 """
 
 
@@ -291,43 +291,43 @@ def save_config(conf: Dict[str, Any]) -> None:
 
 def parse_args(argv: List[str]) -> argparse.Namespace:
     if argv and argv[0] == "config":
-        parser = argparse.ArgumentParser(prog="lfe config", description="lfe Konfiguration")
+        parser = argparse.ArgumentParser(prog="lfe config", description="lfe configuration")
         sub = parser.add_subparsers(dest="config_cmd", required=True)
-        sub.add_parser("path", help="Pfad zur Konfigurationsdatei anzeigen")
-        sub.add_parser("show", help="Aktuelle Konfiguration anzeigen")
-        set_parser = sub.add_parser("set", help="Wert setzen")
+        sub.add_parser("path", help="Show config file path")
+        sub.add_parser("show", help="Show current configuration")
+        set_parser = sub.add_parser("set", help="Set a value")
         set_parser.add_argument(
             "key",
-            help="z.B. provider, ollama.base_url, openai.model, claude.base_url",
+            help="e.g. provider, ollama.base_url, openai.model, claude.base_url",
         )
-        set_parser.add_argument("value", help="Neuer Wert")
-        unset_parser = sub.add_parser("unset", help="Wert leeren/zuruecksetzen")
-        unset_parser.add_argument("key", help="z.B. ollama.model, openai.base_url, claude.model")
+        set_parser.add_argument("value", help="New value")
+        unset_parser = sub.add_parser("unset", help="Reset value to default")
+        unset_parser.add_argument("key", help="e.g. ollama.model, openai.base_url, claude.model")
         parsed = parser.parse_args(argv[1:])
         parsed.mode = "config"
         return parsed
 
     epilog = (
-        "Umgebung:\n"
+        "Environment:\n"
         "  LFE_PROVIDER=ollama|openai|claude\n"
         "  OLLAMA_BASE_URL (Default: https://ollama.com/api)\n"
-        "  LFEE_TOKEN_OLLAMA (oder OLLAMA_API_KEY)\n"
-        "  LFEE_TOKEN_OPENAI (oder OPENAI_API_KEY)\n"
-        "  LFEE_TOKEN_CLAUDE (oder ANTHROPIC_API_KEY/CLAUDE_API_KEY)\n"
+        "  LFEE_TOKEN_OLLAMA (or OLLAMA_API_KEY)\n"
+        "  LFEE_TOKEN_OPENAI (or OPENAI_API_KEY)\n"
+        "  LFEE_TOKEN_CLAUDE (or ANTHROPIC_API_KEY/CLAUDE_API_KEY)\n"
         "  OLLAMA_MODEL\n\n"
-        "Python-Shebang Hinweis:\n"
-        "  lfe nutzt #!/usr/bin/env python3\n"
-        "  Falls python3 fehlt: pruefe erst python --version (muss Python 3 sein), dann\n"
+        "Python shebang note:\n"
+        "  lfe uses #!/usr/bin/env python3\n"
+        "  If python3 is missing: first check python --version (must be Python 3), then\n"
         "  sudo ln -s \"$(command -v python)\" /usr/local/bin/python3\n\n"
-        "Antwortsprache:\n"
-        "  Modell liefert language=DE|EN.\n"
-        "  DE nur bei deutscher Anfrage, sonst EN.\n\n"
-        "Standalone-Binary:\n"
+        "Response language:\n"
+        "  Model returns language=DE|EN.\n"
+        "  DE only for German requests, otherwise EN.\n\n"
+        "Standalone binary:\n"
         "  ./scripts/build_standalone.sh\n\n"
-        "Ollama.com Beispiel:\n"
+        "Ollama.com example:\n"
         "  OLLAMA_BASE_URL=https://ollama.com/api \\\n"
         "  LFEE_TOKEN_OLLAMA=ollama_... \\\n"
-        "  lfe --provider ollama \"zeige alle python dateien\""
+        "  lfe --provider ollama \"show all python files\""
     )
     parser = argparse.ArgumentParser(
         prog="lfe",
@@ -335,22 +335,22 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
         epilog=epilog,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("prompt", nargs="*", help="Natuerliche Sprache fuer den Shell-Befehl")
+    parser.add_argument("prompt", nargs="*", help="Natural language input for the shell command")
     parser.add_argument(
         "--provider",
         choices=PROVIDERS,
         default=None,
-        help="LLM-Provider (ueberschreibt Konfiguration fuer diesen Aufruf)",
+        help="LLM provider (overrides configuration for this call)",
     )
     parser.add_argument(
         "--model",
         default=None,
-        help="Modellname (ueberschreibt Konfiguration fuer diesen Aufruf)",
+        help="Model name (overrides configuration for this call)",
     )
     parser.add_argument(
         "--print-only",
         action="store_true",
-        help="Befehl nur ausgeben, nicht interaktiv ausfuehren",
+        help="Only print command, do not execute interactively",
     )
     if argv in (["-h"], ["--help"]):
         parser.print_help()
@@ -372,7 +372,7 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
             continue
         if tok == "--provider":
             if idx + 1 >= len(argv):
-                parser.error("--provider erwartet einen Wert.")
+                parser.error("--provider expects a value.")
             provider = argv[idx + 1]
             idx += 2
             continue
@@ -382,7 +382,7 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
             continue
         if tok == "--model":
             if idx + 1 >= len(argv):
-                parser.error("--model erwartet einen Wert.")
+                parser.error("--model expects a value.")
             model = argv[idx + 1]
             idx += 2
             continue
@@ -400,7 +400,7 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
 
     prompt = argv[idx:]
     if not prompt:
-        parser.error("Natuerliche Sprache fuer den Shell-Befehl fehlt.")
+        parser.error("Natural language input for the shell command is missing.")
 
     return argparse.Namespace(
         mode="run",
@@ -450,7 +450,7 @@ def detect_distribution() -> str:
 
 
 def render_tree(root: Path, max_depth: int = 2, max_entries: int = 200) -> str:
-    lines = ["."] if root.exists() else [f"<nicht gefunden: {root}>"]
+    lines = ["."] if root.exists() else [f"<not found: {root}>"]
     if not root.exists() or not root.is_dir():
         return "\n".join(lines)
 
@@ -464,7 +464,7 @@ def render_tree(root: Path, max_depth: int = 2, max_entries: int = 200) -> str:
         try:
             children = sorted(path.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower()))
         except OSError as err:
-            lines.append(f"{indent}- <zugriff verweigert: {err}>")
+            lines.append(f"{indent}- <access denied: {err}>")
             return
 
         for child in children:
@@ -493,7 +493,7 @@ def render_tree(root: Path, max_depth: int = 2, max_entries: int = 200) -> str:
 
     walk(root, 0, "")
     if truncated:
-        lines.append(f"... (abgeschnitten nach {max_entries} Eintraegen)")
+        lines.append(f"... (truncated after {max_entries} entries)")
     return "\n".join(lines)
 
 
@@ -502,11 +502,11 @@ def build_system_prompt(cwd: str) -> str:
     home_path = str(Path.home())
     cwd_tree = render_tree(Path(cwd), max_depth=2, max_entries=200)
     context_block = (
-        "\n\nLaufzeit-Kontext (fuer bessere, lokale Shell-Befehle):\n"
+        "\n\nRuntime context (for better local shell commands):\n"
         f"- Distribution: {distro}\n"
-        f"- Lokaler Arbeitspfad (cwd): {cwd}\n"
-        f"- Home-Pfad: {home_path}\n"
-        "- Tree (Tiefe 2) vom lokalen Arbeitspfad:\n"
+        f"- Local working directory (cwd): {cwd}\n"
+        f"- Home path: {home_path}\n"
+        "- Tree (depth 2) of the local working directory:\n"
         f"{cwd_tree}\n"
     )
     return SYSTEM_PROMPT + context_block
@@ -734,20 +734,20 @@ def set_config_value(conf: Dict[str, Any], raw_key: str, value: str) -> None:
     key = normalize_key(raw_key)
     if key == "provider":
         if value not in PROVIDERS:
-            raise ValueError(f"Ungueltiger Provider: {value}. Erlaubt: {', '.join(PROVIDERS)}")
+            raise ValueError(f"Invalid provider: {value}. Allowed: {', '.join(PROVIDERS)}")
         conf["provider"] = value
         return
 
     parts = key.split(".")
     if len(parts) != 2:
         raise ValueError(
-            "Ungueltiger Key. Beispiele: provider, ollama.base_url, openai.model, claude.base_url"
+            "Invalid key. Examples: provider, ollama.base_url, openai.model, claude.base_url"
         )
     provider, field = parts
     if provider not in PROVIDERS:
-        raise ValueError(f"Unbekannter Provider im Key: {provider}")
+        raise ValueError(f"Unknown provider in key: {provider}")
     if field not in ("model", "base_url"):
-        raise ValueError(f"Ungueltiges Feld im Key: {field}")
+        raise ValueError(f"Invalid field in key: {field}")
     conf["providers"][provider][field] = value
 
 
@@ -760,13 +760,13 @@ def unset_config_value(conf: Dict[str, Any], raw_key: str) -> None:
     parts = key.split(".")
     if len(parts) != 2:
         raise ValueError(
-            "Ungueltiger Key. Beispiele: provider, ollama.base_url, openai.model, claude.base_url"
+            "Invalid key. Examples: provider, ollama.base_url, openai.model, claude.base_url"
         )
     provider, field = parts
     if provider not in PROVIDERS:
-        raise ValueError(f"Unbekannter Provider im Key: {provider}")
+        raise ValueError(f"Unknown provider in key: {provider}")
     if field not in ("model", "base_url"):
-        raise ValueError(f"Ungueltiges Feld im Key: {field}")
+        raise ValueError(f"Invalid field in key: {field}")
     conf["providers"][provider][field] = DEFAULTS[provider][field]
 
 
@@ -784,7 +784,7 @@ def handle_config(args: argparse.Namespace, conf: Dict[str, Any]) -> int:
         except ValueError as err:
             print(err, file=sys.stderr)
             return 2
-        print(f"Gespeichert: {args.key}")
+        print(f"Saved: {args.key}")
         return 0
     if args.config_cmd == "unset":
         try:
@@ -793,7 +793,7 @@ def handle_config(args: argparse.Namespace, conf: Dict[str, Any]) -> int:
         except ValueError as err:
             print(err, file=sys.stderr)
             return 2
-        print(f"Zurueckgesetzt: {args.key}")
+        print(f"Reset: {args.key}")
         return 0
     return 2
 
