@@ -1,4 +1,8 @@
+
+
 # linux_for_everybody_else (`lfe`)
+
+![Demo GIF](./lfe tryout.gif)
 
 `lfe` takes a natural language input and suggests a Linux command.
 You can then edit the command directly in the terminal and execute it by pressing Enter.
