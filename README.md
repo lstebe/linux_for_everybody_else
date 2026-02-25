@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 
 
 # linux_for_everybody_else (`lfe`)
@@ -176,3 +177,7 @@ Result:
 Note:
 
 * The binary is platform-specific (Linux build for Linux, macOS build for macOS).
+=======
+# linux_for_everybody_else
+An AI API based linux terminal tool that gives you the command based on your NLP dexcripzion of what you want to to
+>>>>>>> parent of b10c46f (added the files)
