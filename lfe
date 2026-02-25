@@ -65,6 +65,7 @@ Rules:
   - "DE" only when the user request is German.
   - otherwise always "EN" (including all other languages).
 - Output exactly ONE command in "command".
+- When command contains paths with whitespace, make sure that fitting quotation maks are used.
 - If the command uses flags, fill "flag_explanations" with exactly those flags.
 - If no flags are used, output "flag_explanations": [].
 - Use safe defaults when possible (for example show first instead of deleting directly), and explain that in explanation.
