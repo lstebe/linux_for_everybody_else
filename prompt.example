@@ -28,7 +28,7 @@ Rules:
 
 Runtime context (for better local shell commands):
 - Distribution: Ubuntu 24.04.3 LTS
-- Local working directory (cwd): /home/ls87742/code/linux_for_everybody_else
+- Local working directory (cwd): /home/USERME/code/linux_for_everybody_else
 - Home path: /home/USERME
 - Tree (depth 2) of the local working directory:
 .
