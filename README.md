@@ -1,7 +1,10 @@
 
 
 # linux_for_everybody_else (`lfe`)
-
+## Get it with
+```bash
+git clone https://github.com/lstebe/linux_for_everybody_else.git && tar -xzf linux_for_everybody_else/*.tar.gz -C .
+```
 ![Demo GIF](./lfe%20tryout.gif)
 
 `lfe` takes a natural language input and suggests a Linux command.
