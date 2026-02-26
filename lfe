@@ -74,6 +74,7 @@ Rules:
 - If "language" = "EN", write explanation/flag_explanations/warnings in English.
 - Use relative paths (.) or the provided cwd.
 - No backticks, no extra text, JSON only.
+- When you are asked for creating multiline file content, make correct use of heredoc (EOF) 
 """
 
 
@@ -122,6 +123,10 @@ UI_TEXTS: Dict[str, Dict[str, str]] = {
         "warnings_header": "\nWarnungen:",
         "enter_to_run": "\nTippe Enter, um den Befehl auszufuehren (du kannst ihn vorher bearbeiten).",
         "ctrl_c": "Ctrl+C zum Abbrechen.",
+        "multiline_edit_hint": (
+            "Mehrzeiliger Befehl erkannt. Enter fuehrt ihn unveraendert aus; "
+            "du kannst optional einen einzeiligen Ersatz eingeben."
+        ),
         "suggestion": "\nVorschlag:",
         "cancelled": "\nAbgebrochen.",
         "cd_error": "\ncd-Fehler: {error}",
@@ -147,6 +152,10 @@ UI_TEXTS: Dict[str, Dict[str, str]] = {
         "warnings_header": "\nWarnings:",
         "enter_to_run": "\nPress Enter to run the command (you can edit it first).",
         "ctrl_c": "Press Ctrl+C to cancel.",
+        "multiline_edit_hint": (
+            "Multiline command detected. Press Enter to run it unchanged; "
+            "you may optionally enter a one-line replacement."
+        ),
         "suggestion": "\nSuggestion:",
         "cancelled": "\nCancelled.",
         "cd_error": "\ncd error: {error}",
@@ -654,6 +663,11 @@ def extract_json(raw_text: str) -> Dict[str, Any]:
 
 
 def editable_input(prompt: str, prefill: str) -> str:
+    # read -e/-i ist rein einzeilig. Bei Heredoc/Multiline-Kommandos darf
+    # der Prefill nicht abgeschnitten werden, sonst geht z. B. der Body verloren.
+    if "\n" in prefill or "\r" in prefill:
+        return input(prompt)
+
     # GNU Readline via bash zeigt den Prefill in vielen Terminals stabiler an
     # als Python input()+readline allein.
     bash_path = shutil.which("bash")
@@ -1036,6 +1050,8 @@ def main() -> int:
 
     print(t(ui_lang, "enter_to_run"))
     print(t(ui_lang, "ctrl_c"))
+    if "\n" in command or "\r" in command:
+        print(t(ui_lang, "multiline_edit_hint"))
     print(t(ui_lang, "suggestion"))
     print(command)
 
@@ -1071,7 +1087,11 @@ def main() -> int:
         return 0
 
     print(t(ui_lang, "stdout_stderr"))
-    completed = subprocess.run(final_command, shell=True, check=False)
+    try:
+        completed = subprocess.run(final_command, shell=True, check=False)
+    except KeyboardInterrupt:
+        # Ctrl+C waehrend laufendem Befehl (z. B. watch) ohne Python-Traceback beenden.
+        return 130
     return completed.returncode
 
 
