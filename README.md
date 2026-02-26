@@ -6,6 +6,10 @@
 ```bash
 git clone https://github.com/lstebe/linux_for_everybody_else.git && tar -xzf linux_for_everybody_else/*.tar.gz -C .
 ```
+If you only want to update, go inside your lfe dir and hit: (Config remains)
+```bash
+curl -L https://raw.githubusercontent.com/lstebe/linux_for_everybody_else/main/lfe -o lfe && curl -L https://raw.githubusercontent.com/lstebe/linux_for_everybody_else/main/README.md -o README.md
+```
 ![Demo GIF](./lfe%20tryout.gif)
 
 `lfe` takes a natural language input and suggests a Linux command.
